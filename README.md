@@ -207,3 +207,45 @@ If we were using our own parser, then it wouldn't matter much, as long as we mak
 3. Does it matter if you're reading a file from disk or from a pipe?  No.
 4. Is it faster to work with bytes instead of Unicode?  Yes.
 5. Does the version of Python (2 or 3) make a difference?  Maybe.
+
+## Can You Make It Go Faster?
+
+We have a CPU-bound problem.
+Even when Python (CPython, to be more precise) runs on a multi-core machine, because of the [GIL](https://stackoverflow.com/questions/1294382/what-is-a-global-interpreter-lock-gil), each Python process can only use a single core.
+So if we can let our other cores join the party, processing should happen faster.
+Our processing consists of the following steps:
+
+1. Read bytes (I/O bound)
+2. Parse CSV (CPU bound)
+3. Count non-empty values, etc. (CPU bound)
+
+The bottleneck is steps 2 and 3, so offloading them to multiple processes makes sense:
+
+```
+Bytes -> Reader -> Processor 1 -> Collator
+                -> Processor 2 ->
+                -> ...
+                -> Processor N ->
+```
+
+Let's see how this implementation goes:
+
+```
+bash-3.2$ time pv sampledata.csv | python multiread.py
+ 362MiB 0:00:20 [17.4MiB/s] [==================================================>] 100%
+Counter({98: 699182})
+[0, 474061, 474069, 474061, 233726, 639752, 43879, 43879, 272219, 0, 232697, 352034, 506889, 419834, 238963, 253763, 587626, 0, 267186, 267186, 270990, 435364, 206037, 206037, 458097, 582415, 582415, 582415, 582415, 582415, 582415, 582415, 582415, 0, 523037, 0, 652521, 525829, 528151, 590963, 650090, 309059, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 583518, 583518, 0, 0, 0, 0, 632934, 632934, 0, 0, 0, 0, 403372, 403372, 0, 0, 0, 0, 682333, 682333, 147462, 179818, 146352, 215427, 166945, 351125, 335831, 201459, 681185, 0, 9, 192561, 192562, 609841, 664372, 664676, 657087, 657113, 471408, 471411, 464545, 570827, 570827, 535957, 535957]
+
+real    0m21.673s
+user    1m3.031s
+sys     0m13.219s
+```
+
+This kept all of our 4 cores busy: 100% use during the running time of the program.
+However, it actually doesn't buy us _that_ much: only 1-2s, which is a modest increase.
+This is because multiprocessing also comes at the price of additional I/O overhead between the subprocesses.
+
+Is it worth it?
+In this particular case, no, not really.
+However, if we were doing some more CPU-intensive processing, then the benefit of using additional CPU cores would outweight the cost of I/O overhead.
+Let's make our processor more feature complete, and keep a track of the maximum, minimum and average lengths.
