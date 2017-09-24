@@ -20,7 +20,8 @@ The tasks I need to solve are, in approximate order of increasing difficulty:
 - For each column:
   - Number and ratio of non-empty values
   - The maximum, minimum and mean lengths of the values
-  - *Number of unique values* (this is the hard one)
+  - **Number of unique values** (this is the hard one)
+  - **The top 20 most frequent values** (this is also hard)
 
 ## Questions
 
@@ -65,15 +66,15 @@ Unless our dumb parser is somehow extremely defective, we can conclude that we h
 
 ### What is the Fastest Way to Parse CSV?
 
-Someone has compared a variety of options on [StackExchange](https://softwarerecs.stackexchange.com/questions/7463/fastest-python-library-to-read-a-csv-file).
-
-We thus have several options:
+We have several options:
 
 - We could roll our own, like we did above.
 - The standard library has a [csv](https://docs.python.org/2/library/csv.html) module.
 - Numpy and Pandas also have their own CSV readers
+- Any others?
 
-The conclusions were that [numpy](https://docs.scipy.org/doc/numpy/) was the clear winner, followed by [pandas](http://pandas.pydata.org/).
+Someone has compared a variety of options on [StackExchange](https://softwarerecs.stackexchange.com/questions/7463/fastest-python-library-to-read-a-csv-file).
+Their conclusions were that [numpy](https://docs.scipy.org/doc/numpy/) was the clear winner, followed by [pandas](http://pandas.pydata.org/).
 Unfortunately, np.fromfile requires a very specific CSV format incompatible with our requirements, and the more robust np.loadtxt is notoriously slow.
 
 So, let's try pandas:
@@ -201,7 +202,7 @@ If we were using our own parser, then it wouldn't matter much, as long as we mak
 
 ## Halfway Summary
 
-1. What is the bottleneck?  I/O.
+1. What is the bottleneck?  CPU.
 2. What is the fastest way to parse CSV?  Write our own simple parser.
 3. Does it matter if you're reading a file from disk or from a pipe?  No.
 4. Is it faster to work with bytes instead of Unicode?  Yes.
