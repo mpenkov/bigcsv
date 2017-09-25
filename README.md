@@ -268,3 +268,55 @@ sys     0m1.486s
 We've slightly increased the computational complexity of our processing.
 The difference in execution time is now much more visible: on our 4-core laptop, the multiprocessing version is 1.5 times faster.
 I expect that as the processing gets more CPU-hungry (there is still more to do), this lead will continue to increase.
+
+## Can You Make It Go Even Faster?
+
+Let's have a look what's taking up the most time:
+
+```
+bash-3.2$ time pv sampledata.csv | kernprof -v -l multiread.py
+... snip ...
+Wrote profile results to multiread.py.lprof
+Timer unit: 1e-06 s
+
+Total time: 375.052 s
+File: multiread.py
+Function: read at line 17
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    17                                           @profile
+    18                                           def read(line_queue, header, result_queue):
+    19         1           29     29.0      0.0      counter = collections.Counter()
+    20        99          119      1.2      0.0      fill_count = [0 for _ in header]
+    21        99          103      1.0      0.0      max_len = [0 for _ in header]
+    22        99          120      1.2      0.0      min_len = [sys.maxint for _ in header]
+    23        99           73      0.7      0.0      sum_len = [0 for _ in header]
+    24    699183       431777      0.6      0.1      while True:
+    25    699183      4638839      6.6      1.2          line = line_queue.get()
+    26    699183       528746      0.8      0.1          if line is _SENTINEL:
+    27         1            1      1.0      0.0              break
+    28    699182      5794840      8.3      1.5          row = parse_line(line)
+    29    699182       558756      0.8      0.1          row_len = len(row)
+    30    699182      1169373      1.7      0.3          counter[row_len] += 1
+    31    699182       574065      0.8      0.2          if row_len != len(header):
+    32                                                       continue
+    33  69219018     46546899      0.7     12.4          for j, column in enumerate(row):
+    34  68519836     47239480      0.7     12.6              col_len = len(column)
+    35  68519836     67689088      1.0     18.0              max_len[j] = max(max_len[j], col_len)
+    36  68519836     67689050      1.0     18.0              min_len[j] = min(min_len[j], col_len)
+    37  68519836     56056394      0.8     14.9              sum_len[j] += col_len
+    38  68519836     44426354      0.6     11.8              if col_len > 0:
+    39  38433446     31707478      0.8      8.5                  fill_count[j] += 1
+    40         1          445    445.0      0.0      result_queue.put((counter, fill_count, max_len, min_len, sum_len))
+
+
+real    10m34.739s
+user    10m25.871s
+sys     0m4.919s
+```
+
+We're spending a lot of time in the inner loop.
+Is there any way we can speed this up?
+One idea is to look at batching up the max, min and sum operations.
+This would require keeping column lengths in memory.

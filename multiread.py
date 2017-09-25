@@ -14,6 +14,7 @@ def parse_line(line):
     return line.rstrip('\n').split(_DELIMITER)
 
 
+@profile
 def read(line_queue, header, result_queue):
     counter = collections.Counter()
     fill_count = [0 for _ in header]
@@ -82,6 +83,23 @@ def main():
     print(avg_len)
 
 
+def main_singleprocess():
+    class FakeQueue(object):
+        def get(self):
+            line = sys.stdin.readline()
+            if line:
+                return line
+            return _SENTINEL
+    header = parse_line(sys.stdin.readline())
+    result_queue = multiprocessing.Queue()
+    read(FakeQueue(), header, result_queue)
+    counter, fill_count, max_len, min_len, avg_len = result_queue.get()
+
+    print(counter)
+    print(fill_count)
+    print(max_len)
+    print(min_len)
+    print(avg_len)
 
 if __name__ == '__main__':
-    main()
+    main_singleprocess()
