@@ -320,3 +320,62 @@ We're spending a lot of time in the inner loop.
 Is there any way we can speed this up?
 One idea is to look at batching up the max, min and sum operations.
 This would require keeping column lengths in memory.
+
+```
+bash-3.2$ time pv sampledata.csv | kernprof -v -l multiread.py
+... snip...
+Wrote profile results to multiread.py.lprof
+Timer unit: 1e-06 s
+
+Total time: 190.55 s
+File: multiread.py
+Function: read at line 17
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    17                                           @profile
+    18                                           def read(line_queue, header, result_queue):
+    19         1           41     41.0      0.0      counter = collections.Counter()
+    20        99          159      1.6      0.0      column_lengths = [list() for _ in header]
+    21    699183       672771      1.0      0.4      while True:
+    22    699183      8128471     11.6      4.3          line = line_queue.get()
+    23    699183       852492      1.2      0.4          if line is _SENTINEL:
+    24         1            0      0.0      0.0              break
+    25    699182      9638751     13.8      5.1          row = parse_line(line)
+    26    699182       888174      1.3      0.5          row_len = len(row)
+    27    699182      2236587      3.2      1.2          counter[row_len] += 1
+    28    699182       860060      1.2      0.5          if row_len != len(header):
+    29                                                       continue
+    30  69219018     66830359      1.0     35.1          for j, column in enumerate(row):
+    31  68519836     92805650      1.4     48.7              column_lengths[j].append(len(column))
+    32
+    33         1            1      1.0      0.0      fill_count, min_len, max_len, sum_len = zip(
+    34        99      7632206  77093.0      4.0          *[(l.count(0), min(l), max(l), sum(l)) for l in column_lengths]
+    35                                               )
+    36         1         3872   3872.0      0.0      result_queue.put((counter, fill_count, max_len, min_len, sum_len))
+
+
+real    5m9.481s
+user    4m21.393s
+sys     0m6.887s
+```
+
+This is significant.
+We've nearly halved our execution time, at the expense of storing all the column lengths in memory.
+We keep these benefits when we stop profiling and go back to using multiple cores:
+
+```
+bash-3.2$ time python multiread.py < sampledata.csv > /dev/null
+
+real    0m30.520s
+user    1m27.877s
+sys     0m13.709s
+```
+
+But what about the price we paid?
+We're keeping the length of each column in memory.
+We have hundreds of columns (1e2), and potentially hundreds of millions (1e8) of rows.
+This means we'll be keeping tens of billions (1e10) of _integers_ in memory.
+Python integers are a whopping 24 bytes, so we could need trillions (1e12) of bytes.
+This is a pretty _rough_ estimate, as it doesn't take into account some cool things like [integer interning](https://docs.python.org/2/c-api/int.html).
+But it still sounds little bit more than what we have available, so...  what do we do next?

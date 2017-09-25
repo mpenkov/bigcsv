@@ -14,13 +14,10 @@ def parse_line(line):
     return line.rstrip('\n').split(_DELIMITER)
 
 
-@profile
+# @profile
 def read(line_queue, header, result_queue):
     counter = collections.Counter()
-    fill_count = [0 for _ in header]
-    max_len = [0 for _ in header]
-    min_len = [sys.maxint for _ in header]
-    sum_len = [0 for _ in header]
+    column_lengths = [list() for _ in header]
     while True:
         line = line_queue.get()
         if line is _SENTINEL:
@@ -31,12 +28,11 @@ def read(line_queue, header, result_queue):
         if row_len != len(header):
             continue
         for j, column in enumerate(row):
-            col_len = len(column)
-            max_len[j] = max(max_len[j], col_len)
-            min_len[j] = min(min_len[j], col_len)
-            sum_len[j] += col_len
-            if col_len > 0:
-                fill_count[j] += 1
+            column_lengths[j].append(len(column))
+
+    fill_count, min_len, max_len, sum_len = zip(
+        *[(l.count(0), min(l), max(l), sum(l)) for l in column_lengths]
+    )
     result_queue.put((counter, fill_count, max_len, min_len, sum_len))
 
 
@@ -102,4 +98,5 @@ def main_singleprocess():
     print(avg_len)
 
 if __name__ == '__main__':
-    main_singleprocess()
+    # main_singleprocess()
+    main()
