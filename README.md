@@ -481,4 +481,60 @@ Line #      Hits         Time  Per Hit   % Time  Line Contents
 ```
 
 Updating the counters one by one is sub-optimal.
-Perhaps if we cached a few rows in memory before updating our counters, things'd be a bit faster.
+Perhaps if we cached a few rows in memory before updating our counters, things'd be a bit faster?
+
+Let's write a new class to abstract away our counter-updating details:
+
+```python
+class BufferingCounter(object):
+    def __init__(self, header, maxbufsize=10000):
+        self._header = header
+        self._maxbufsize = maxbufsize
+        self._counters = [collections.Counter() for _ in self._header]
+        self._buffer = [list() for _ in self._header]
+        self._bufsize = 0
+
+    def add_row(self, row):
+        for j, column in enumerate(row):
+            self._buffer[j].append(len(column))
+        self._bufsize += 1
+
+        if self._bufsize % self._maxbufsize == 0:
+            self.flush_buffer()
+
+    def flush_buffer(self):
+        for j, values in enumerate(self._buffer):
+            self._counters[j].update(values)
+        self._buffer = [list() for _ in self._header]
+        self._bufsize = 0
+```
+
+Looks good on paper, but the results aren't what we expected - it's actually _slower_ than before:
+
+```
+bash-3.2$ time python multiread.py < sampledata.csv > /dev/null
+
+real    0m52.460s
+user    2m45.889s
+sys     0m12.671s
+```
+
+The profiler tells us why:
+
+```
+bash-3.2$ time pv sampledata.csv | kernprof -v -l multiread.py
+... snip...
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    38                                               @profile
+    39                                               def add_row(self, row):
+    40  69219018     34960103      0.5     21.4          for j, column in enumerate(row):
+    41  68519836     56867368      0.8     34.8              self._buffer[j].append(len(column))
+    42    699182       544912      0.8      0.3          self._bufsize += 1
+    43
+    44    699182       609252      0.9      0.4          if self._bufsize % self._maxbufsize == 0:
+    45        69     70347319 1019526.4     43.1              self.flush_buffer()
+... snip...
+```
+
+Flushing the buffer and updating the underlying collections.Counter takes a surprising amount of time.
