@@ -26,36 +26,11 @@ def digest(counter):
     ]
 
 
-class BufferingCounter(object):
-    def __init__(self, header, maxbufsize=10000):
-        self._header = header
-        self._maxbufsize = maxbufsize
-
-        self._counters = [collections.Counter() for _ in self._header]
-        self._buffer = [list() for _ in self._header]
-        self._bufsize = 0
-
-    def add_row(self, row):
-        for j, column in enumerate(row):
-            self._buffer[j].append(len(column))
-        self._bufsize += 1
-
-        if self._bufsize % self._maxbufsize == 0:
-            self.flush_buffer()
-
-    # @profile
-    def flush_buffer(self):
-        for j, values in enumerate(self._buffer):
-            self._counters[j].update(values)
-        self._buffer = [list() for _ in self._header]
-        self._bufsize = 0
-
-
-# @profile
+@profile
 def read(line_queue, header, result_queue):
     logging.debug('args: %r', locals())
-    row_counter = collections.Counter()
-    col_counter = BufferingCounter(header)
+    counter = collections.Counter()
+    column_lengths = [collections.Counter() for _ in header]
     while True:
         line = line_queue.get()
         if line is _SENTINEL:
@@ -63,12 +38,11 @@ def read(line_queue, header, result_queue):
         row = parse_line(line)
         logging.debug('row: %r', row)
         row_len = len(row)
-        row_counter[row_len] += 1
+        counter[row_len] += 1
         if row_len != len(header):
             continue
-        col_counter.add_row(row)
-    col_counter.flush_buffer()
-    column_lengths = col_counter._counters
+        for j, column in enumerate(row):
+            column_lengths[j][len(column)] += 1
 
     logging.debug('column_lengths: %r', column_lengths)
     # logging.info('num_rows: %r asizeof(column_lengths): %.2f MB',
@@ -76,7 +50,7 @@ def read(line_queue, header, result_queue):
 
     fill_count, min_len, max_len, sum_len = zip(*[digest(c) for c in column_lengths])
     logging.debug('fill_count: %r', fill_count)
-    result_queue.put((row_counter, list(fill_count), list(max_len), list(min_len), list(sum_len)))
+    result_queue.put((counter, list(fill_count), list(max_len), list(min_len), list(sum_len)))
 
 
 def collate(header, results):
