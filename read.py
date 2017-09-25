@@ -1,4 +1,6 @@
 from __future__ import print_function
+from __future__ import division
+
 import argparse
 import collections
 import csv
@@ -59,15 +61,27 @@ def read(reader):
     counter = collections.Counter()
     header = next(reader)
     fill_count = [0 for _ in header]
+    max_len = [0 for _ in header]
+    min_len = [sys.maxint for _ in header]
+    sum_len = [0 for _ in header]
     for i, row in enumerate(reader):
         counter[len(row)] += 1
         if len(row) != len(header):
             continue
         for j, column in enumerate(row):
-            if column == '':
+            col_len = len(column)
+            max_len[j] = max(max_len[j], col_len)
+            min_len[j] = min(min_len[j], col_len)
+            sum_len[j] += col_len
+            if col_len:
                 fill_count[j] += 1
+    num_rows = sum(counter.values())
+    avg_len = [the_sum / num_rows for the_sum in sum_len]
     print(counter)
     print(fill_count)
+    print(max_len)
+    print(min_len)
+    print(avg_len)
 
 
 def main():

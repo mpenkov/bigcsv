@@ -248,4 +248,23 @@ This is because multiprocessing also comes at the price of additional I/O overhe
 Is it worth it?
 In this particular case, no, not really.
 However, if we were doing some more CPU-intensive processing, then the benefit of using additional CPU cores would outweight the cost of I/O overhead.
-Let's make our processor more feature complete, and keep a track of the maximum, minimum and average lengths.
+Let's make our processor more feature-complete, and keep a track of the maximum, minimum and average lengths.
+
+```
+bash-3.2$ time pv sampledata.csv | python multiread.py > /dev/null
+ 362MiB 0:00:57 [ 6.3MiB/s] [==================================================>] 100%
+
+real    1m0.263s
+user    3m29.807s
+sys     0m9.886s
+bash-3.2$ time pv sampledata.csv | python read.py --reader dumb > /dev/null
+ 362MiB 0:01:33 [3.89MiB/s] [==================================================>] 100%
+
+real    1m33.120s
+user    1m31.859s
+sys     0m1.486s
+```
+
+We've slightly increased the computational complexity of our processing.
+The difference in execution time is now much more visible: on our 4-core laptop, the multiprocessing version is 1.5 times faster.
+I expect that as the processing gets more CPU-hungry (there is still more to do), this lead will continue to increase.
