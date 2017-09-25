@@ -26,7 +26,7 @@ def digest(counter):
     ]
 
 
-@profile
+# @profile
 def read(line_queue, header, result_queue):
     logging.debug('args: %r', locals())
     counter = collections.Counter()
@@ -119,5 +119,5 @@ class FakeQueue(object):
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    read_stream(sys.stdin)
-    # main()
+    # read_stream(sys.stdin)
+    main()

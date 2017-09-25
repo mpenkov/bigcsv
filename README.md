@@ -163,6 +163,8 @@ There are advantages and disadvantages to both options:
 - When reading from a pipe you can read output from other processes, but can't seek around.
 - When reading from a file, you can seek around it, but you're stuck with that file being on disk.
 
+The best option is to handle both, if you can, and let someone else decide what's best for them.
+
 ### Is It Faster To Work With Bytes or Unicode?
 
 CSV is typically a text format.
@@ -538,3 +540,5 @@ Line #      Hits         Time  Per Hit   % Time  Line Contents
 ```
 
 Flushing the buffer and updating the underlying collections.Counter takes a surprising amount of time.
+
+It doesn't look like this approach will work, so we're stuck with updating the Counters one-by-one :(
