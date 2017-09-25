@@ -393,3 +393,92 @@ bash-3.2$ py.test test.py -q
 
 This way, we know that our refactorings don't break anything down the road.
 As a bonus, the tests also caught several bugs in multiread.py.
+
+## Memory Profiling
+
+We can use [pympler](https://pythonhosted.org/Pympler/) to tell us the true size of our column length lists:
+
+```python
+from pympler.asizeof import asizeof
+
+logging.info('num_rows: %r asizeof(column_lengths): %.2f MB',
+             sum(counter.values()), asizeof(column_lengths) / 1024**2)
+```
+
+This costs time to calculate, but it's worth knowing at the moment:
+
+```
+bash-3.2$ time pv sampledata.csv | python multiread.py > /dev/null
+ 362MiB 0:00:25 [14.3MiB/s] [==================================================>] 100%
+INFO:root:num_rows: 174431 asizeof(column_lengths): 139.21 MB
+INFO:root:num_rows: 174025 asizeof(column_lengths): 139.20 MB
+INFO:root:num_rows: 175471 asizeof(column_lengths): 139.21 MB
+INFO:root:num_rows: 175255 asizeof(column_lengths): 139.20 MB
+
+real    1m18.618s
+user    4m33.919s
+sys     0m13.292s
+```
+
+Wow, at this rate, we'll be paying 1GB of memory for each 1M rows.
+Let's see if we can cut that down a bit.
+
+We don't really need to keep a _list_ of all the length of each columns.
+A tally (length, number of columns) will do.
+We can implement that easily using a [collections.Counter](https://docs.python.org/2/library/collections.html) and observe a significant drop in memory usage:
+
+```
+bash-3.2$ time pv sampledata.csv | python multiread.py > /dev/null
+ 362MiB 0:00:38 [9.32MiB/s] [==================================================>] 100%
+INFO:root:num_rows: 174287 asizeof(column_lengths): 0.34 MB
+INFO:root:num_rows: 175428 asizeof(column_lengths): 0.34 MB
+INFO:root:num_rows: 175052 asizeof(column_lengths): 0.37 MB
+INFO:root:num_rows: 174415 asizeof(column_lengths): 0.34 MB
+
+real    0m40.787s
+user    2m10.863s
+sys     0m11.074s
+```
+
+This is after making sure our tests still pass, of course :)
+
+However, once we disable pympler, we'll find that our code runs slower than before, when everything was in memory:
+
+```
+bash-3.2$ time python multiread.py < sampledata.csv > /dev/null
+
+real    0m36.809s
+user    2m4.985s
+sys     0m9.345s
+```
+
+If we profile our read function again, we'll see why:
+
+```
+bash-3.2$ time pv sampledata.csv | kernprof -v -l multiread.py
+... snip...
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    29                                           @profile
+    30                                           def read(line_queue, header, result_queue):
+    31         1           18     18.0      0.0      logging.debug('args: %r', locals())
+    32         1           15     15.0      0.0      counter = collections.Counter()
+    33        99          596      6.0      0.0      column_lengths = [collections.Counter() for _ in header]
+    34    699183       475593      0.7      0.3      while True:
+    35    699183      2239169      3.2      1.4          line = line_queue.get()
+    36    699183       539042      0.8      0.3          if line is _SENTINEL:
+    37         1            0      0.0      0.0              break
+    38    699182      5573801      8.0      3.5          row = parse_line(line)
+    39    699182      3890694      5.6      2.5          logging.debug('row: %r', row)
+    40    699182       567693      0.8      0.4          row_len = len(row)
+    41    699182       905227      1.3      0.6          counter[row_len] += 1
+    42    699182       597672      0.9      0.4          if row_len != len(header):
+    43                                                       continue
+    44  69219018     49692721      0.7     31.6          for j, column in enumerate(row):
+    45  68519836     92626690      1.4     59.0              column_lengths[j][len(column)] += 1
+... snip...
+```
+
+Updating the counters one by one is sub-optimal.
+Perhaps if we cached a few rows in memory before updating our counters, things'd be a bit faster.

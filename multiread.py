@@ -6,6 +6,8 @@ import logging
 import multiprocessing
 import sys
 
+from pympler.asizeof import asizeof
+
 _DELIMITER = '|'
 _NUM_WORKERS = multiprocessing.cpu_count()
 _SENTINEL = None
@@ -15,11 +17,20 @@ def parse_line(line):
     return line.rstrip('\n').split(_DELIMITER)
 
 
-# @profile
+def digest(counter):
+    return [
+        sum(counter.itervalues()) - counter[0],
+        min(counter),
+        max(counter),
+        sum(length * frequency for (length, frequency) in counter.iteritems())
+    ]
+
+
+@profile
 def read(line_queue, header, result_queue):
     logging.debug('args: %r', locals())
     counter = collections.Counter()
-    column_lengths = [list() for _ in header]
+    column_lengths = [collections.Counter() for _ in header]
     while True:
         line = line_queue.get()
         if line is _SENTINEL:
@@ -31,13 +42,13 @@ def read(line_queue, header, result_queue):
         if row_len != len(header):
             continue
         for j, column in enumerate(row):
-            column_lengths[j].append(len(column))
+            column_lengths[j][len(column)] += 1
 
     logging.debug('column_lengths: %r', column_lengths)
+    # logging.info('num_rows: %r asizeof(column_lengths): %.2f MB',
+    #              sum(counter.values()), asizeof(column_lengths) / 1024**2)
 
-    fill_count, min_len, max_len, sum_len = zip(
-        *[[sum(x > 0 for x in l), min(l), max(l), sum(l)] for l in column_lengths]
-    )
+    fill_count, min_len, max_len, sum_len = zip(*[digest(c) for c in column_lengths])
     logging.debug('fill_count: %r', fill_count)
     result_queue.put((counter, list(fill_count), list(max_len), list(min_len), list(sum_len)))
 
@@ -107,5 +118,6 @@ class FakeQueue(object):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     read_stream(sys.stdin)
     # main()
