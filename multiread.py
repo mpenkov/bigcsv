@@ -2,6 +2,7 @@ from __future__ import print_function
 from __future__ import division
 
 import collections
+import logging
 import multiprocessing
 import sys
 
@@ -16,6 +17,7 @@ def parse_line(line):
 
 # @profile
 def read(line_queue, header, result_queue):
+    logging.debug('args: %r', locals())
     counter = collections.Counter()
     column_lengths = [list() for _ in header]
     while True:
@@ -23,6 +25,7 @@ def read(line_queue, header, result_queue):
         if line is _SENTINEL:
             break
         row = parse_line(line)
+        logging.debug('row: %r', row)
         row_len = len(row)
         counter[row_len] += 1
         if row_len != len(header):
@@ -30,19 +33,22 @@ def read(line_queue, header, result_queue):
         for j, column in enumerate(row):
             column_lengths[j].append(len(column))
 
+    logging.debug('column_lengths: %r', column_lengths)
+
     fill_count, min_len, max_len, sum_len = zip(
-        *[(l.count(0), min(l), max(l), sum(l)) for l in column_lengths]
+        *[[sum(x > 0 for x in l), min(l), max(l), sum(l)] for l in column_lengths]
     )
-    result_queue.put((counter, fill_count, max_len, min_len, sum_len))
+    logging.debug('fill_count: %r', fill_count)
+    result_queue.put((counter, list(fill_count), list(max_len), list(min_len), list(sum_len)))
 
 
 def collate(header, results):
     all_counter = collections.Counter()
     all_fill_count = [0 for _ in header]
     all_max = [0 for _ in header]
-    all_min = [0 for _ in header]
+    all_min = [sys.maxint for _ in header]
     all_sum = [0 for _ in header]
-    for counter, fill_count, max_len, min_len, sum_len in results:
+    for (counter, fill_count, max_len, min_len, sum_len) in results:
         all_counter.update(counter)
         for i, _ in enumerate(header):
             all_fill_count[i] += fill_count[i]
@@ -52,7 +58,10 @@ def collate(header, results):
 
     num_rows = sum(all_counter.values())
     all_avg = [the_sum / num_rows for the_sum in all_sum]
-    return all_counter, all_fill_count, all_max, all_min, all_avg
+    return {
+        'counter': all_counter, 'fill_count': all_fill_count, 'max_len': all_max,
+        'min_len': all_min, 'avg_len': all_avg
+    }
 
 
 def main():
@@ -69,34 +78,34 @@ def main():
         line_queue.put(_SENTINEL)
     for worker in workers:
         worker.join()
-    counter, fill_count, max_len, min_len, avg_len = collate(
-        header, (result_queue.get() for _ in workers)
-    )
-    print(counter)
-    print(fill_count)
-    print(max_len)
-    print(min_len)
-    print(avg_len)
+    result = collate(header, (result_queue.get() for _ in workers))
+
+    print(result['counter'])
+    print(result['fill_count'])
+    print(result['max_len'])
+    print(result['min_len'])
+    print(result['avg_len'])
 
 
-def main_singleprocess():
-    class FakeQueue(object):
-        def get(self):
-            line = sys.stdin.readline()
-            if line:
-                return line
-            return _SENTINEL
-    header = parse_line(sys.stdin.readline())
+def read_stream(stream):
+    header = parse_line(stream.readline())
     result_queue = multiprocessing.Queue()
-    read(FakeQueue(), header, result_queue)
-    counter, fill_count, max_len, min_len, avg_len = result_queue.get()
+    read(FakeQueue((line for line in stream)), header, result_queue)
+    result = result_queue.get()
+    return collate(header, [result])
 
-    print(counter)
-    print(fill_count)
-    print(max_len)
-    print(min_len)
-    print(avg_len)
+
+class FakeQueue(object):
+    def __init__(self, iterator):
+        self._iterator = iterator
+
+    def get(self):
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            return _SENTINEL
+
 
 if __name__ == '__main__':
-    # main_singleprocess()
-    main()
+    read_stream(sys.stdin)
+    # main()

@@ -379,3 +379,17 @@ This means we'll be keeping tens of billions (1e10) of _integers_ in memory.
 Python integers are a whopping 24 bytes, so we could need trillions (1e12) of bytes.
 This is a pretty _rough_ estimate, as it doesn't take into account some cool things like [integer interning](https://docs.python.org/2/c-api/int.html).
 But it still sounds little bit more than what we have available, so...  what do we do next?
+
+## But Wait, How Do You Know This Thing Still Works?
+
+We've been doing something very naughty: writing code without writing tests.
+It's time we redeem ourselves and write some:
+
+```
+bash-3.2$ py.test test.py -q
+..
+2 passed in 0.33 seconds
+```
+
+This way, we know that our refactorings don't break anything down the road.
+As a bonus, the tests also caught several bugs in multiread.py.

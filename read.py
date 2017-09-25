@@ -4,7 +4,6 @@ from __future__ import division
 import argparse
 import collections
 import csv
-import io
 import pandas as pd
 import sys
 
@@ -77,11 +76,16 @@ def read(reader):
                 fill_count[j] += 1
     num_rows = sum(counter.values())
     avg_len = [the_sum / num_rows for the_sum in sum_len]
-    print(counter)
-    print(fill_count)
-    print(max_len)
-    print(min_len)
-    print(avg_len)
+    return counter, fill_count, max_len, min_len, avg_len
+
+
+def read_stream(stream, reader=dumb_reader, delimiter='|'):
+    reader = reader(stream, delimiter=delimiter)
+    counter, fill_count, max_len, min_len, avg_len = read(reader)
+    return {
+        'counter': counter, 'fill_count': fill_count, 'max_len': max_len,
+        'min_len': min_len, 'avg_len': avg_len
+    }
 
 
 def main():
@@ -91,8 +95,14 @@ def main():
     parser.add_argument('--delimiter', default='|')
     args = parser.parse_args()
     stream = sys.stdin if args.file is None else open(args.file, 'r')
-    reader = _READERS[args.reader](stream, delimiter=args.delimiter)
-    read(reader)
+
+    result = read_stream(stream, reader=_READERS[args.reader], delimiter=args.delimiter)
+
+    print(result['counter'])
+    print(result['fill_count'])
+    print(result['max_len'])
+    print(result['min_len'])
+    print(result['avg_len'])
 
 
 if __name__ == '__main__':
