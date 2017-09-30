@@ -21,7 +21,6 @@ The tasks I need to solve are, in approximate order of increasing difficulty:
   - Number and ratio of non-empty values
   - The maximum, minimum and mean lengths of the values
   - **Number of unique values** (this is the hard one)
-  - **The top 20 most frequent values** (this is also hard)
 
 The machine this needs to run on only has Py2, but I'll try to keep this as version-agnostic as possible.
 
@@ -748,7 +747,6 @@ Let's combine our solutions, i.e. do:
   - Number and ratio of non-empty values
   - The maximum, minimum and mean lengths of the values
   - Number of unique values (this is the hard one)
-  - ~~The top 20 most frequent values~~ (I'll leave this for later, this article is already long enough).
 
 We can do the histogram as part of split - it's trivial.
 For the rest, we need a script that reads a sorted column and outputs the results.
