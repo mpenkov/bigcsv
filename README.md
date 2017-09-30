@@ -738,3 +738,124 @@ sys     0m1.969s
 
 An interesting result is that our thread-based solution chews through this file around 20s faster than the multiprocessing solution does its calculations.
 This is despite the fact that the former does a **lot** of I/O.
+
+## Putting It All Together
+
+Let's combine our solutions, i.e. do:
+
+- Histogram of row size (how many columns each row has)
+- For each column:
+  - Number and ratio of non-empty values
+  - The maximum, minimum and mean lengths of the values
+  - Number of unique values (this is the hard one)
+  - ~~The top 20 most frequent values~~ (I'll leave this for later, this article is already long enough).
+
+We can do the histogram as part of split - it's trivial.
+For the rest, we need a script that reads a sorted column and outputs the results.
+
+Now that our output is sorted, we can easily [run-length encode](https://en.wikipedia.org/wiki/Run-length_encoding) it.
+This is good because the number of runs automatically gives us the number of unique values.
+Furthermore, the number of runs is guaranteed to be less than or equal to the number of values, so working with runs is more efficient and convenient.
+Once we have our runs and run lengths, calculating the above is trivial.
+It's also relatively quick:
+
+```
+bash-3.2$ time for f in gitignore/col-*.txt; do LC_ALL=C sort $f | python summarize.py > /dev/null; done
+
+real    1m7.055s
+user    1m10.568s
+sys     0m2.700s
+```
+
+It took 1min 7s seconds to sort and summarize all of our hundred or so columns.
+Taking into account the 30 seconds it took to split the original file, we can expect to process the file in under 2 min.
+Let's see if we can do better: start by profiling summarize.py:
+
+```
+Total time: 4.71134 s
+File: summarize.py
+Function: read_column at line 22
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    22                                           @profile
+    23                                           def read_column(iterator):
+    24         1            3      3.0      0.0      num_values = 0
+    25         1            1      1.0      0.0      num_uniques = 0
+    26         1            0      0.0      0.0      num_empty = 0
+    27         1            1      1.0      0.0      max_len = 0
+    28         1            0      0.0      0.0      min_len = sys.maxint
+    29         1            1      1.0      0.0      sum_len = 0
+    30
+    31    218087      3644832     16.7     77.4      for run_value, run_length in run_length_encode(line.rstrip(b'\n') for line in iterator):
+    32    218086       142615      0.7      3.0          if run_value == BLANK:
+    33         1            1      1.0      0.0              num_empty = run_length
+    34    218086       137396      0.6      2.9          num_values += run_length
+    35    218086       134973      0.6      2.9          num_uniques += 1
+    36    218086       143855      0.7      3.1          val_len = len(run_value)
+    37    218086       178101      0.8      3.8          max_len = max(max_len, val_len)
+    38    218086       170990      0.8      3.6          min_len = min(min_len, val_len)
+    39    218086       158565      0.7      3.4          sum_len += val_len * run_length
+    40
+    41         1            1      1.0      0.0      return {
+    42         1            0      0.0      0.0          'num_values': num_values,
+    43         1            1      1.0      0.0          'num_fills': num_values - num_empty,
+    44         1            1      1.0      0.0          'fill_ratio': (num_values - num_empty) / num_values,
+    45         1            0      0.0      0.0          'max_len': max_len,
+    46         1            1      1.0      0.0          'min_len': min_len,
+        47         1            2      2.0      0.0          'avg_len': sum_len / num_values,
+    48         1            1      1.0      0.0          'num_uniques': num_uniques,
+    49                                               }
+```
+
+Most of the time gets spent in the run_length_encode function.
+Drilling down:
+
+```
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+     9                                           @profile
+    10                                           def run_length_encode(iterator):
+    11         1      2449072 2449072.0     60.2      run_value, run_length = next(iterator), 1
+    12    699182       667812      1.0     16.4      for value in iterator:
+    13    699181       297065      0.4      7.3          if value < run_value:
+    14                                                       raise ValueError('unsorted iterator')
+    15    699181       280812      0.4      6.9          elif value != run_value:
+    16    218085        82619      0.4      2.0              yield run_value, run_length
+    17    218085        96326      0.4      2.4              run_value, run_length = value, 1
+    18                                                   else:
+    19    481096       192319      0.4      4.7              run_length += 1
+    20         1            0      0.0      0.0      yield run_value, run_length
+```
+
+Not much we can do here.
+Most of the time is spent reading the iterator (in our case, it's a file).
+The first hit is particularly bad: it's likely because of buffering.
+Fortunately, this is another I/O bound problem, and we can solve it using threads.
+Before we do that, we have to tend to another problem: when to sort?
+
+1. Sort all columns first, and then run them through summarize.py on multiple threads
+2. Sort each column and pipe it to summarize.py directly
+
+Let's look at the first option: sorting everything first.
+
+```
+bash-3.2$ time for f in gitignore/col*.txt; do sort $f > $f.sorted; done
+
+real    9m17.598s
+user    9m6.205s
+sys     0m4.773s
+```
+
+gsort is slightly faster because it uses parallelization, unlike the default sort on MacOS, but still relatively slow:
+
+```
+bash-3.2$ time for f in gitignore/col*.txt; do gsort $f > $f.sorted; done
+
+real    3m40.958s
+user    10m33.544s
+sys     0m8.451s
+```
+
+Why does sorting take so long?
+Is it because we're writing to a file?  Piping to summarize was lightning-fast.

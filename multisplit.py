@@ -1,6 +1,7 @@
 """Split a CSV into columns, one file per column."""
 from __future__ import print_function
 import csv
+import collections
 import sys
 import threading
 import Queue
@@ -35,7 +36,9 @@ def make_batches(iterable, batch_size=DEFAULT_BATCH_SIZE):
 
 
 def populate_queues(header, reader, queues):
+    histogram = collections.Counter()
     for batch in make_batches(reader):
+        histogram.update(len(row) for row in batch)
         columns = [list() for _ in header]
         for row in batch:
             if len(header) != len(row):
@@ -46,6 +49,7 @@ def populate_queues(header, reader, queues):
             queue.put(values)
     for queue in queues:
         queue.put(SENTINEL)
+    return histogram
 
 
 def split(fin, open_file=open_file):
@@ -58,11 +62,14 @@ def split(fin, open_file=open_file):
     for thread in threads:
         thread.start()
 
-    populate_queues(header, reader, queues)
+    histogram = populate_queues(header, reader, queues)
 
     for queue in queues:
         queue.join()
 
+    return histogram
+
 
 if __name__ == '__main__':
-    split(sys.stdin)
+    histogram = split(sys.stdin)
+    print(histogram)
