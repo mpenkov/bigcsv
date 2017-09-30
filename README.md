@@ -23,6 +23,8 @@ The tasks I need to solve are, in approximate order of increasing difficulty:
   - **Number of unique values** (this is the hard one)
   - **The top 20 most frequent values** (this is also hard)
 
+The machine this needs to run on only has Py2, but I'll try to keep this as version-agnostic as possible.
+
 ## Questions
 
 1. What is the bottleneck?  Is it I/O or parsing?
@@ -542,3 +544,197 @@ Line #      Hits         Time  Per Hit   % Time  Line Contents
 Flushing the buffer and updating the underlying collections.Counter takes a surprising amount of time.
 
 It doesn't look like this approach will work, so we're stuck with updating the Counters one-by-one :(
+
+## But What about the Hard Problems?
+
+If you recall, the harder problems to solve were:
+
+1. Calculate the exact number of unique values for each column
+2. Calculate the 20 most frequent values
+
+Let's look at the first problem.
+In theory, assuming we've isolated the values for a single column, this kind of task is easy to achieve:
+
+```python
+num_unique = len(set(all_values_in_column))
+```
+
+Unfortunately, this requires loading the entire column (or at least all the unique items) into memory.
+In our case, this number is much larger than the amount of memory we have, so we have to look at other methods.
+
+**Assuming our list is sorted**, then we can calculate the number of unique items without keeping the whole thing in memory:
+
+```python
+def count_unique(values):
+    num_unique = 1
+    prev_value = next(values)
+    for value in values:
+        if value != prev_value:
+            num_unique += 1
+            prev_value = value
+    return num_unique
+```
+
+Assuming a large list can be sorted without violating memory limits is actually not that bold an assumption.
+In fact, [GNU sort]() does that sort of thing all the time: it writes temporary results to disk, and then merges them when necessary.
+Of course, we could implement the same thing in Python, but why bother?
+We could just pipe our column values into GNU sort, and read the sorted values back.
+So our pipeline for a single column looks like:
+
+```
+      extract             sort                   count_unique
+CSV ----------> column ----------> sorted columns ----------> num_unique
+```
+
+That works for one column, but what about multiple columns?
+We have several options:
+
+1. Repeat the above process (extract, sort, count_unique) for each column
+2. Extract all columns to individual files, then run each file through sort_unique
+3. Anything I've missed?
+
+The first option is attractive because it's simple, but it requires running the I/O-expensive extract step for each column.
+How does the cost of the extract step compare to the sort step?
+Let's find out.
+
+Extract only:
+
+```
+bash-3.2$ for col in 1 2 3 4 5; do time python extract.py $col < sampledata.csv > /dev/null; done
+
+real    0m5.017s
+user    0m4.832s
+sys     0m0.171s
+
+real    0m5.205s
+user    0m5.016s
+sys     0m0.176s
+
+real    0m5.279s
+user    0m5.086s
+sys     0m0.182s
+```
+
+Extract then sort:
+
+```
+bash-3.2$ for col in 1 2 3; do time bash -c "python extract.py $col < sampledata.csv | LC_ALL=C sort" > /dev/null; done
+
+real    0m5.283s
+user    0m5.091s
+sys     0m0.201s
+
+real    0m5.259s
+user    0m5.065s
+sys     0m0.202s
+
+real    0m5.238s
+user    0m5.047s
+sys     0m0.196s
+```
+
+I/O is significantly more expensive that sorting: the former takes seconds, the latter takes hundreds of milliseconds.
+If we have a hundred columns, the extraction alone can take nearly 10 minutes, which is _way_ too long to wait for a file with under a million rows.
+Let's try the second option: extract all columns to individual files, then run each file through sort and then count_unique.
+
+Extract:
+
+```
+(bigcsv)bash-3.2$ time python split.py < sampledata.csv | head
+gitignore/col-0.txt
+gitignore/col-1.txt
+gitignore/col-2.txt
+gitignore/col-3.txt
+gitignore/col-4.txt
+gitignore/col-5.txt
+... snip ...
+
+real    0m59.243s
+user    0m57.020s
+sys     0m1.183s
+```
+
+Sort and count_unique:
+
+```
+bash-3.2$ time for f in gitignore/*.txt; do echo -n "$f "; LC_ALL=C sort $f | python count_unique.py; done
+gitignore/col-0.txt 699182
+gitignore/col-1.txt 218086
+gitignore/col-10.txt 153250
+gitignore/col-11.txt 38320
+gitignore/col-12.txt 538
+... snip...
+
+real    0m37.239s
+user    0m40.164s
+sys     0m2.635s
+```
+
+So extracting our 97 columns took 1 min; sorting and count_unique took 40s.
+That's far better than the first option we looked at, which would have taken close to 10 min.
+
+If we wanted to speed things up, we could apply some of the tricks from above, as well as:
+
+1. Profile split.py
+2. Performs the sorts in parallel
+
+If we profile, we get this:
+
+```
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    11                                           @profile
+    12                                           def split(fin, open_file=open_file):
+    13         1           10     10.0      0.0      reader = csv.reader(fin, delimiter='|')
+    14         1          110    110.0      0.0      header = next(reader)
+    15        99          215      2.2      0.0      paths = ['gitignore/col-%d.txt' % col_num for col_num, col_name in enumerate(header)]
+    16        99      1947987  19676.6      9.9      fouts = [open(path, 'wb') for path in paths]
+    17    100000       919215      9.2      4.7      for row in reader:
+    18   9899901      5419047      0.5     27.6          for col_num, col_value in enumerate(row):
+    19   9799902     11272701      1.2     57.5              fouts[col_num].write(col_value + b'\n')
+    20        99          200      2.0      0.0      for fout in fouts:
+    21        98        61326    625.8      0.3          fout.close()
+    22        99          128      1.3      0.0      for path in paths:
+    23        98          491      5.0      0.0          print(path)
+```
+
+The main cost here is the I/O of writing to the temporary files: it takes up over half of the execution time.
+It's actually _so_ expensive that it would make the first approach attractive for cases where the column number is small.
+
+So here we're dealing with an I/O bottleneck.
+We're writing to a hundred or so files synchronously, and paying the price for it.
+What if we could write to the files asynchronously?
+One way to do that, if we were using Python 3.x, would be asynchronous I/O (we might get to that later).
+In our world, we don't have that, but we have the next best thing: threads.
+
+Threads effectively allow you to do more non-CPU-bound tasks in a shorter amount of wall time.
+They are lightweight than multiprocesses, so you can create many more of them.
+Because they do not bypass the limitations of the GIL, so they are best applied to cases like I/O bottlenecks.
+
+The strategy is simple:
+
+```python
+def writer_thread(queue_in, fpath_out, open_):
+    with open_(fpath_out, 'wb') as fout:
+        lines = True
+        while lines is not SENTINEL:
+            lines = queue_in.get()
+            if lines is not SENTINEL:
+                fout.write(b'\n'.join(lines) + b'\n')
+            queue_in.task_done()
+```
+
+We start a separate thread for each column, and that thread writes to its own file.
+We batch lines together for efficiency: otherwise, the overhead of working with some many queues and items becomes too high.
+Let's time it:
+
+```
+bash-3.2$ time python multisplit.py < sampledata.csv
+
+real    0m27.865s
+user    0m26.215s
+sys     0m1.969s
+```
+
+An interesting result is that our thread-based solution chews through this file around 20s faster than the multiprocessing solution does its calculations.
+This is despite the fact that the former does a **lot** of I/O.
