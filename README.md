@@ -23,6 +23,14 @@ The tasks I need to solve are, in approximate order of increasing difficulty:
   - **Number of unique values** (this is the hard one)
 
 The machine this needs to run on only has Py2, but I'll try to keep this as version-agnostic as possible.
+I'll be using a proprietary sample data file:
+
+```
+bash-3.2$ ls -lh sampledata.csv
+-rw-r--r--+ 1 misha  staff   362M Sep 24 22:09 sampledata.csv
+```
+
+It's around 400MB, has 97 columns and close to 700M rows.
 
 ## Questions
 
@@ -575,7 +583,7 @@ def count_unique(values):
 ```
 
 Assuming a large list can be sorted without violating memory limits is actually not that bold an assumption.
-In fact, [GNU sort]() does that sort of thing all the time: it writes temporary results to disk, and then merges them when necessary.
+In fact, [GNU sort](https://www.gnu.org/software/coreutils/manual/html_node/sort-invocation.html) does that sort of thing all the time: it writes temporary results to disk, and then merges them when necessary.
 Of course, we could implement the same thing in Python, but why bother?
 We could just pipe our column values into GNU sort, and read the sorted values back.
 So our pipeline for a single column looks like:
@@ -670,7 +678,7 @@ sys     0m2.635s
 ```
 
 So extracting our 97 columns took 1 min; sorting and count_unique took 40s.
-That's far better than the first option we looked at, which would have taken close to 10 min.
+That's already far better than the first option we looked at, which would have taken close to 10 min.
 
 If we wanted to speed things up, we could apply some of the tricks from above, as well as:
 
@@ -735,7 +743,8 @@ user    0m26.215s
 sys     0m1.969s
 ```
 
-An interesting result is that our thread-based solution chews through this file around 20s faster than the multiprocessing solution does its calculations.
+This is almost twice as fast as the single-threaded solution.
+Another interesting result is that our thread-based solution chews through this file around 20s faster than the multiprocessing solution does its calculations.
 This is despite the fact that the former does a **lot** of I/O.
 
 ## Putting It All Together
@@ -838,17 +847,18 @@ Before we do that, we have to tend to another problem: when to sort?
 Let's look at the first option: sorting everything **first**.
 
 ```
-bash-3.2$ time for f in gitignore/col*.txt; do sort $f > $f.sorted; done
+bash-3.2$ time for f in gitignore/col*.txt; do LC_ALL=C sort $f > $f.sorted; done
 
 real    9m17.598s
 user    9m6.205s
 sys     0m4.773s
 ```
 
+Yikes!
 gsort is slightly faster because it uses parallelization, unlike the default sort on MacOS, but still relatively slow:
 
 ```
-bash-3.2$ time for f in gitignore/col*.txt; do gsort $f > $f.sorted; done
+bash-3.2$ time for f in gitignore/col*.txt; do LC_ALL=C gsort $f > $f.sorted; done
 
 real    3m40.958s
 user    10m33.544s
@@ -916,13 +926,15 @@ sys     0m5.448s
 ```
 
 1 minute and 20 seconds.
-It's good enough for me.
+It's good enough for me!
 
 ## Summary
 
 - More than one way to parse CSV - the best method depends on your application
 - CSV parsing is CPU bound, but
 - Splitting CSV files is I/O bound
+- [multiprocessing](https://docs.python.org/2/library/multiprocessing.html) helps work around CPU-bound problems on multi-core machines
+- [threading](https://docs.python.org/2/library/threading.html) helps work around I/O-bound problems
 - [pympler](https://pythonhosted.org/Pympler/) is helpful for memory profiling
 - [line_profiler](https://github.com/rkern/line_profiler) is helpful for CPU usage profiling
 - [pipes](https://docs.python.org/2/library/pipes.html) module is helpful for using pipes within your Python programs
