@@ -837,7 +837,7 @@ Before we do that, we have to tend to another problem: when to sort?
 1. Sort all columns first, and then run them through summarize.py on multiple threads
 2. Sort each column and pipe it to summarize.py directly
 
-Let's look at the first option: sorting everything first.
+Let's look at the first option: sorting everything **first**.
 
 ```
 bash-3.2$ time for f in gitignore/col*.txt; do sort $f > $f.sorted; done
@@ -859,3 +859,74 @@ sys     0m8.451s
 
 Why does sorting take so long?
 Is it because we're writing to a file?  Piping to summarize was lightning-fast.
+
+Let's try the second option with some pseudo-code:
+
+```
+split
+for each column:
+   sort column | summarize
+collect summaries
+clean up
+```
+
+There's a Python module for helping us out with the sort and pipe part.
+It's appropriately called [pipes](https://docs.python.org/2/library/pipes.html).
+We use it like this:
+
+```python
+def sort_and_summarize(path):
+    template = pipes.Template()
+    template.append('LC_ALL=C sort', '--')
+    with template.open(path, 'r') as fin:
+        result = summarize(fin)
+    return result
+```
+
+The LC_ALL=C forces a sort by native byte values, as opposed to locale-specific characters.
+This gives the same result as sorting within Python.
+
+Since we've seen that sorting and summarizing is CPU-intensive, we can spread the work across multiple cores.
+The result:
+
+```
+bash-3.2$ time python summarize.py gitignore/col-*.txt > /dev/null
+
+real    0m36.105s
+user    2m10.014s
+sys     0m2.899s
+```
+
+Now all we need is a script that does the following:
+
+```
+split
+for each column:
+    sort column | summarize
+collect summaries
+clean up
+```
+
+Let's time our end result:
+
+```
+bash-3.2$ time python bigcsv.py < sampledata.csv > /dev/null
+
+real    1m20.490s
+user    3m5.546s
+sys     0m5.448s
+```
+
+1 minute and 20 seconds.
+It's good enough for me.
+
+## Summary
+
+- More than one way to parse CSV - the best method depends on your application
+- CSV parsing is CPU bound, but
+- Splitting CSV files is I/O bound
+- [pympler](https://pythonhosted.org/Pympler/) is helpful for memory profiling
+- [line_profiler](https://github.com/rkern/line_profiler) is helpful for CPU usage profiling
+- [pipes](https://docs.python.org/2/library/pipes.html) module is helpful for using pipes within your Python programs
+- Watch [this video](https://youtu.be/QJwVYlDzAXs) for a good intro to Python profiling
+- Watch [this video](https://youtu.be/iG6fr81xHKA) for a good intro to Python 3's asyncio

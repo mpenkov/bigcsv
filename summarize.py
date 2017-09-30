@@ -1,6 +1,8 @@
 from __future__ import division
-import sys
 import json
+import pipes
+import multiprocessing
+import sys
 
 
 BLANK = b''
@@ -20,7 +22,7 @@ def run_length_encode(iterator):
     yield run_value, run_length
 
 
-def read_column(iterator):
+def summarize(iterator):
     num_values = 0
     num_uniques = 0
     num_empty = 0
@@ -49,10 +51,30 @@ def read_column(iterator):
     }
 
 
+def sort_and_summarize(path):
+    template = pipes.Template()
+    template.append('LC_ALL=C sort', '--')
+    with template.open(path, 'r') as fin:
+        result = summarize(fin)
+    return result
+
+
+def multi_summarize(paths, processes=multiprocessing.cpu_count()):
+    pool = multiprocessing.Pool(processes=processes)
+    return pool.map(sort_and_summarize, paths)
+
+
 def main():
-    result = read_column(sys.stdin)
+    result = summarize(sys.stdin)
     sys.stdout.write(json.dumps(result, sort_keys=True) + '\n')
 
 
+def main_multi():
+    paths = list(sys.argv[1:])
+    for path, result in zip(paths, multi_summarize(paths)):
+        result['_path'] = path
+        sys.stdout.write(json.dumps(result, sort_keys=True) + '\n')
+
+
 if __name__ == '__main__':
-    main()
+    main_multi()

@@ -7,7 +7,7 @@ import Queue
 import pytest
 
 import read
-import read_column
+import summarize
 import multiread
 import multisplit
 
@@ -68,7 +68,7 @@ def test_make_batches():
     assert list(multisplit.make_batches([1, 2, 3], 2)) == [[1, 2], [3]]
 
 
-def test_read_column():
+def test_summarize():
     column = io.BytesIO(b'\n1\n2\n2\n3\n3\n3\naa\n')
     expected = {
         'num_values': 8,
@@ -79,13 +79,13 @@ def test_read_column():
         'avg_len': 1.0,
         'num_uniques': 5
     }
-    assert read_column.read_column(column) == expected
+    assert summarize.summarize(column) == expected
 
 
 def test_run_length_encode():
     expected = [(1, 1), (2, 2), (3, 3)]
-    actual = list(read_column.run_length_encode(iter([1, 2, 2, 3, 3, 3])))
+    actual = list(summarize.run_length_encode(iter([1, 2, 2, 3, 3, 3])))
     assert expected == actual
 
     with pytest.raises(ValueError):
-        list(read_column.run_length_encode(iter([2, 1])))
+        list(summarize.run_length_encode(iter([2, 1])))

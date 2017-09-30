@@ -18,9 +18,10 @@ def split(fin, open_file=open_file):
             fouts[col_num].write(col_value + b'\n')
     for fout in fouts:
         fout.close()
-    for path in paths:
-        print(path)
+    return paths
 
 
 if __name__ == '__main__':
-    split(sys.stdin)
+    paths = split(sys.stdin)
+    for path in paths:
+        print(path)

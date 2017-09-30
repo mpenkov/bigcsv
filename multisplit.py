@@ -67,7 +67,7 @@ def split(fin, open_file=open_file):
     for queue in queues:
         queue.join()
 
-    return histogram
+    return histogram, paths
 
 
 if __name__ == '__main__':
