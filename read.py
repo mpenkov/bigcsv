@@ -4,7 +4,6 @@ from __future__ import division
 import argparse
 import collections
 import csv
-import pandas as pd
 import sys
 
 import backports.csv
@@ -41,6 +40,7 @@ def backports_reader(fin, **kwargs):
 
 
 def pandas_reader(fin, **kwargs):
+    import pandas as pd
     delimiter = kwargs.get('delimiter', ',')
     names = fin.readline().rstrip('\n').split(delimiter)
     yield names
