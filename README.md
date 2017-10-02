@@ -221,7 +221,7 @@ If we were using our own parser, then it wouldn't matter much, as long as we mak
 
 ## Can You Make It Go Faster?
 
-We have a CPU-bound problem.
+When parsing CSV, we have a CPU-bound problem.
 Even when Python (CPython, to be more precise) runs on a multi-core machine, because of the [GIL](https://stackoverflow.com/questions/1294382/what-is-a-global-interpreter-lock-gil), each Python process can only use a single core.
 So if we can let our other cores join the party, processing should happen faster.
 Our processing consists of the following steps:
@@ -552,14 +552,10 @@ Flushing the buffer and updating the underlying collections.Counter takes a surp
 
 It doesn't look like this approach will work, so we're stuck with updating the Counters one-by-one :(
 
-## But What about the Hard Problems?
+## But What about the Hard Problem?
 
-If you recall, the harder problems to solve were:
+If you recall, the harder problem to solve was: calculate the exact number of unique values for each column.
 
-1. Calculate the exact number of unique values for each column
-2. Calculate the 20 most frequent values
-
-Let's look at the first problem.
 In theory, assuming we've isolated the values for a single column, this kind of task is easy to achieve:
 
 ```python
@@ -938,5 +934,6 @@ It's good enough for me!
 - [pympler](https://pythonhosted.org/Pympler/) is helpful for memory profiling
 - [line_profiler](https://github.com/rkern/line_profiler) is helpful for CPU usage profiling
 - [pipes](https://docs.python.org/2/library/pipes.html) module is helpful for using pipes within your Python programs
-- Watch [this video](https://youtu.be/QJwVYlDzAXs) for a good intro to Python profiling
-- Watch [this video](https://youtu.be/iG6fr81xHKA) for a good intro to Python 3's asyncio
+- Watch [this video](https://youtu.be/QJwVYlDzAXs) for an intro to Python profiling
+- Watch [this video](https://youtu.be/iG6fr81xHKA) for an intro to Python 3's asyncio
+- Russian speakers: watch [this video](https://youtu.be/D0vbuIDOV4c) for a good intro to memory and Python
