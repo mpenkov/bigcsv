@@ -3,7 +3,7 @@ backports.csv==1.0.5
 backports.shutil-get-terminal-size==1.0.0
 decorator==4.1.2
 enum34==1.1.6
-ipython==7.16.3
+ipython==8.10.0
 ipython-genutils==0.2.0
 line-profiler==2.0
 numpy==1.22.0
